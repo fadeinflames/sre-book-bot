@@ -387,6 +387,28 @@ func (s *Store) GetModuleResources(ctx context.Context, moduleSlug string) ([]Le
 	return out, rows.Err()
 }
 
+func (s *Store) GetLessonResources(ctx context.Context, lessonID int64) ([]LearningResource, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT title, url
+		FROM resources
+		WHERE lesson_id = $1
+		ORDER BY title
+	`, lessonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LearningResource
+	for rows.Next() {
+		var item LearningResource
+		if err := rows.Scan(&item.Title, &item.URL); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) SubmitChecklist(ctx context.Context, userID, checklistID int64, notes string) (ChecklistSubmission, error) {
 	var submission ChecklistSubmission
 	err := s.db.QueryRow(ctx, `

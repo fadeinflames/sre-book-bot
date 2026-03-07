@@ -173,7 +173,7 @@ func (s *Service) cmdRoadmap(ctx context.Context, user app.User, chatID int64) {
 		}
 		fmt.Fprintf(&b, "- %s (%s): lessons %d/%d, mastery %.0f%%\n", m.Slug, status, m.LessonCompleted, m.LessonTotal, m.MasteryScore*100)
 	}
-	b.WriteString("\nКак начать: /lesson\nПосле чтения урока: /done <lesson_id>\nДальше: /quiz <module_slug>")
+	b.WriteString("\nКак начать: /lesson\nПосле чтения урока: /done (lesson_id)\nДальше: /quiz (module_slug)")
 	s.sendText(chatID, b.String())
 }
 
@@ -185,12 +185,30 @@ func (s *Service) cmdLesson(ctx context.Context, user app.User, chatID int64) {
 	}
 	for _, m := range roadmap {
 		if m.NextLessonID > 0 {
+			resources, err := s.store.GetLessonResources(ctx, m.NextLessonID)
+			if err != nil {
+				s.logger.Warn("load lesson resources failed", "err", err, "lesson_id", m.NextLessonID)
+			}
+			resourceText := "Материалы для этого урока пока не добавлены."
+			if len(resources) > 0 {
+				var rb strings.Builder
+				rb.WriteString("Материалы:\n")
+				for _, r := range resources {
+					url := r.URL
+					if strings.HasPrefix(url, "local://") {
+						url = strings.TrimPrefix(url, "local://") + " (локальный файл)"
+					}
+					fmt.Fprintf(&rb, "- %s: %s\n", r.Title, url)
+				}
+				resourceText = strings.TrimSpace(rb.String())
+			}
 			text := fmt.Sprintf(
-				"*%s*\nmodule=%s, lesson_id=%d\n\n%s\n\nЧто делать дальше:\n1) Изучи материал\n2) Отметь прохождение: /done %d\n3) Пройди квиз модуля: /quiz %s\n4) Источники: /sources %s",
+				"%s\nmodule=%s, lesson_id=%d\n\n%s\n\n%s\n\nЧто делать дальше:\n1) Открой материалы из блока выше\n2) Отметь прохождение: /done %d\n3) Пройди квиз модуля: /quiz %s\n4) Источники модуля: /sources %s",
 				m.NextLessonTitle,
 				m.Slug,
 				m.NextLessonID,
 				m.NextLessonContent,
+				resourceText,
 				m.NextLessonID,
 				m.Slug,
 				m.Slug,
@@ -205,7 +223,7 @@ func (s *Service) cmdLesson(ctx context.Context, user app.User, chatID int64) {
 func (s *Service) cmdDone(ctx context.Context, user app.User, chatID int64, args string) {
 	lessonID, err := strconv.ParseInt(strings.TrimSpace(args), 10, 64)
 	if err != nil || lessonID <= 0 {
-		s.sendText(chatID, "Использование: /done <lesson_id>")
+		s.sendText(chatID, "Использование: /done (lesson_id)")
 		return
 	}
 	if err := s.store.MarkLessonDone(ctx, user.ID, lessonID); err != nil {
@@ -219,7 +237,7 @@ func (s *Service) cmdDone(ctx context.Context, user app.User, chatID int64, args
 func (s *Service) cmdQuiz(ctx context.Context, user app.User, chatID int64, args string) {
 	moduleSlug := strings.TrimSpace(args)
 	if moduleSlug == "" {
-		s.sendText(chatID, "Использование: /quiz <module_slug>")
+		s.sendText(chatID, "Использование: /quiz (module_slug)")
 		return
 	}
 	moduleID, qs, err := s.store.GetQuizQuestionsByModule(ctx, moduleSlug)
@@ -237,7 +255,7 @@ func (s *Service) cmdQuiz(ctx context.Context, user app.User, chatID int64, args
 	s.quizStates[user.TelegramID] = state
 	s.quizMu.Unlock()
 
-	s.sendText(chatID, fmt.Sprintf("Старт квиза по `%s` (%d вопросов). Отвечай буквами A/B/C/D.", moduleSlug, len(qs)))
+	s.sendText(chatID, fmt.Sprintf("Старт квиза по %s (%d вопросов). Отвечай буквами A/B/C/D.", moduleSlug, len(qs)))
 	s.askQuizQuestion(chatID, state)
 }
 
@@ -374,7 +392,7 @@ func (s *Service) cmdProgress(ctx context.Context, user app.User, chatID int64) 
 func (s *Service) cmdChecklists(ctx context.Context, chatID int64, moduleSlug string) {
 	moduleSlug = strings.TrimSpace(moduleSlug)
 	if moduleSlug == "" {
-		s.sendText(chatID, "Использование: /checklists <module_slug>")
+		s.sendText(chatID, "Использование: /checklists (module_slug)")
 		return
 	}
 	items, err := s.store.GetChecklistsByModule(ctx, moduleSlug)
@@ -399,11 +417,11 @@ func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, m
 	if moduleSlug == "" {
 		roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 		if err != nil || len(roadmap) == 0 {
-			s.sendText(chatID, "Использование: /sources <module_slug>\nСначала открой roadmap: /roadmap")
+			s.sendText(chatID, "Использование: /sources (module_slug)\nСначала открой roadmap: /roadmap")
 			return
 		}
 		var b strings.Builder
-		b.WriteString("Укажи модуль: /sources <module_slug>\nДоступные модули:\n")
+		b.WriteString("Укажи модуль: /sources (module_slug)\nДоступные модули:\n")
 		for _, m := range roadmap {
 			fmt.Fprintf(&b, "- %s\n", m.Slug)
 		}
@@ -430,22 +448,22 @@ func (s *Service) quickStartText() string {
 		"Быстрый старт (ничего отдельно активировать не нужно):",
 		"1) Посмотри учебный путь: /roadmap",
 		"2) Возьми следующий урок: /lesson",
-		"3) После урока отметь прогресс: /done <lesson_id>",
-		"4) Проверь знания: /quiz <module_slug>",
-		"5) Посмотри материалы модуля: /sources <module_slug>",
+		"3) После урока отметь прогресс: /done (lesson_id)",
+		"4) Проверь знания: /quiz (module_slug)",
+		"5) Посмотри материалы модуля: /sources (module_slug)",
 		"",
 		"Дополнительно:",
 		"- прогресс: /progress",
 		"- повторение: /review",
-		"- чеклисты: /checklists <module_slug>",
-		"- отправка чеклиста: /submit_checklist <id> <notes>",
+		"- чеклисты: /checklists (module_slug)",
+		"- отправка чеклиста: /submit_checklist (id) (notes)",
 	}, "\n")
 }
 
 func (s *Service) cmdSubmitChecklist(ctx context.Context, user app.User, chatID int64, args string) {
 	parts := strings.SplitN(strings.TrimSpace(args), " ", 2)
 	if len(parts) < 2 {
-		s.sendText(chatID, "Использование: /submit_checklist <checklist_id> <notes>")
+		s.sendText(chatID, "Использование: /submit_checklist (checklist_id) (notes)")
 		return
 	}
 	id, err := strconv.ParseInt(parts[0], 10, 64)
@@ -517,7 +535,7 @@ func (s *Service) cmdReviewSubmission(ctx context.Context, user app.User, chatID
 	}
 	parts := strings.SplitN(strings.TrimSpace(args), " ", 3)
 	if len(parts) < 2 {
-		s.sendText(chatID, "Использование: /review_submission <id> approve|rework [comment]")
+		s.sendText(chatID, "Использование: /review_submission (id) approve|rework [comment]")
 		return
 	}
 	submissionID, err := strconv.ParseInt(parts[0], 10, 64)
