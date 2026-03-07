@@ -28,12 +28,12 @@ type Service struct {
 
 // Тексты кнопок ReplyKeyboard. Клавиатура переключается в зависимости от раздела.
 const (
-	btnRoadmap    = "📖 Roadmap"
-	btnLesson     = "📚 Урок"
-	btnLessonNext = "📄 Дальше"
-	btnQuiz       = "❓ Квиз"
-	btnReview     = "🔄 Повторение"
-	btnProgress   = "📊 Прогресс"
+	btnRoadmap        = "📖 Roadmap"
+	btnLesson         = "📚 Урок"
+	btnLessonNext     = "📄 Дальше"
+	btnQuiz           = "❓ Квиз"
+	btnReview         = "🔄 Повторение"
+	btnProgress       = "📊 Прогресс"
 	btnChecklists     = "✅ Чеклисты"
 	btnSources        = "📎 Материалы"
 	btnHelp           = "❓ Помощь"

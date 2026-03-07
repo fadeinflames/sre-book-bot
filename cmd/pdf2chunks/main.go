@@ -3,7 +3,7 @@
 //
 // Install: brew install poppler  (macOS)
 // Usage: pdftotext -layout - book.pdf | go run ./cmd/pdf2chunks --lesson-id N
-//   or: go run ./cmd/pdf2chunks --lesson-id N --pdf path/to/book.pdf
+// Or: go run ./cmd/pdf2chunks --lesson-id N --pdf path/to/book.pdf
 package main
 
 import (

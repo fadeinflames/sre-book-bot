@@ -6,6 +6,7 @@ UPDATE quiz_questions SET option_b = 'Когда есть определённы
 
 UPDATE quiz_questions SET question = 'Что входит в четыре золотых сигнала мониторинга?' WHERE question = 'Что входит в "четыре золотых сигнала"?';
 
+-- Внимание: этот UPDATE создаёт дубликат option_b/option_c («Секретность отчёта»). Исправление — в 0010_quiz_fix_duplicate_options.
 UPDATE quiz_questions SET option_c = 'Секретность отчёта', option_d = 'Root causes и action items с владельцами' WHERE question = 'Что обязательно в blameless postmortem?';
 UPDATE quiz_questions SET option_a = 'Сразу писать отчёт' WHERE question = 'Что важнее в первые минуты инцидента?';
 
