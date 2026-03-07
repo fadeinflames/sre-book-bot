@@ -1,6 +1,10 @@
 .env
 bin/
+.bin/
 dist/
 *.log
 coverage.out
 tmp/
+.gocache/
+.gopath/
+.gomodcache/
