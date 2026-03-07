@@ -333,7 +333,7 @@ func (s *Service) cmdDone(ctx context.Context, user app.User, chatID int64, args
 func (s *Service) cmdQuiz(ctx context.Context, user app.User, chatID int64, args string) {
 	moduleSlug := strings.TrimSpace(args)
 	if moduleSlug == "" {
-		s.sendTextWithMainMenu(chatID, "Использование: /quiz (module_slug). Укажи slug модуля из roadmap.", user)
+		s.sendQuizModuleChoice(ctx, chatID, user)
 		return
 	}
 	moduleID, qs, err := s.store.GetQuizQuestionsByModule(ctx, moduleSlug)
@@ -353,6 +353,52 @@ func (s *Service) cmdQuiz(ctx context.Context, user app.User, chatID int64, args
 
 	s.sendTextWithLearningMenu(chatID, fmt.Sprintf("Старт квиза по %s (%d вопросов). Выбери ответ кнопкой ниже. Назад — выйти в меню.", moduleSlug, len(qs)))
 	s.askQuizQuestion(chatID, state)
+}
+
+func (s *Service) sendQuizModuleChoice(ctx context.Context, chatID int64, user app.User) {
+	roadmap, err := s.store.GetRoadmap(ctx, user.ID)
+	if err != nil || len(roadmap) == 0 {
+		s.sendTextWithMainMenu(chatID, "Нет модулей. Сначала открой Roadmap.", user)
+		return
+	}
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for i := 0; i < len(roadmap); i += 2 {
+		var row []tgbotapi.InlineKeyboardButton
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(roadmap[i].Slug, "quiz:"+roadmap[i].Slug))
+		if i+1 < len(roadmap) {
+			row = append(row, tgbotapi.NewInlineKeyboardButtonData(roadmap[i+1].Slug, "quiz:"+roadmap[i+1].Slug))
+		}
+		rows = append(rows, row)
+	}
+	kb := tgbotapi.InlineKeyboardMarkup{InlineKeyboard: rows}
+	msg := tgbotapi.NewMessage(chatID, "Выбери модуль для квиза:")
+	msg.ReplyMarkup = kb
+	if _, err := s.bot.Send(msg); err != nil {
+		s.logger.Error("send quiz module choice failed", "err", err, "chat_id", chatID)
+	}
+}
+
+func (s *Service) sendChecklistModuleChoice(ctx context.Context, chatID int64, user app.User) {
+	roadmap, err := s.store.GetRoadmap(ctx, user.ID)
+	if err != nil || len(roadmap) == 0 {
+		s.sendTextWithMainMenu(chatID, "Нет модулей. Сначала открой Roadmap.", user)
+		return
+	}
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for i := 0; i < len(roadmap); i += 2 {
+		var row []tgbotapi.InlineKeyboardButton
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(roadmap[i].Slug, "checklists:"+roadmap[i].Slug))
+		if i+1 < len(roadmap) {
+			row = append(row, tgbotapi.NewInlineKeyboardButtonData(roadmap[i+1].Slug, "checklists:"+roadmap[i+1].Slug))
+		}
+		rows = append(rows, row)
+	}
+	kb := tgbotapi.InlineKeyboardMarkup{InlineKeyboard: rows}
+	msg := tgbotapi.NewMessage(chatID, "Выбери модуль для чеклистов:")
+	msg.ReplyMarkup = kb
+	if _, err := s.bot.Send(msg); err != nil {
+		s.logger.Error("send checklist module choice failed", "err", err, "chat_id", chatID)
+	}
 }
 
 func (s *Service) askQuizQuestion(chatID int64, state *quizState) {
@@ -500,7 +546,7 @@ func (s *Service) cmdProgress(ctx context.Context, user app.User, chatID int64) 
 func (s *Service) cmdChecklists(ctx context.Context, user app.User, chatID int64, moduleSlug string) {
 	moduleSlug = strings.TrimSpace(moduleSlug)
 	if moduleSlug == "" {
-		s.sendTextWithMainMenu(chatID, "Использование: /checklists (module_slug)", user)
+		s.sendChecklistModuleChoice(ctx, chatID, user)
 		return
 	}
 	items, err := s.store.GetChecklistsByModule(ctx, moduleSlug)
@@ -750,22 +796,38 @@ func (s *Service) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 	}
 
 	data := cb.Data
-	if len(data) >= 6 && data[:5] == "quiz:" {
-		opt := strings.ToUpper(string(data[5]))
-		if opt != "A" && opt != "B" && opt != "C" && opt != "D" {
+	if len(data) > 5 && data[:5] == "quiz:" {
+		rest := data[5:]
+		if len(rest) == 1 {
+			opt := strings.ToUpper(rest)
+			if opt == "A" || opt == "B" || opt == "C" || opt == "D" {
+				s.quizMu.Lock()
+				state := s.quizStates[user.TelegramID]
+				s.quizMu.Unlock()
+				if state != nil {
+					_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, opt))
+					edit := tgbotapi.NewEditMessageReplyMarkup(cb.Message.Chat.ID, cb.Message.MessageID, tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
+					_, _ = s.bot.Request(edit)
+					s.acceptQuizAnswerAndAskNext(ctx, user, cb.Message.Chat.ID, opt)
+					return
+				}
+			}
+		} else {
+			// выбор модуля для квиза: quiz:module_slug
 			_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, ""))
-			return
-		}
-		s.quizMu.Lock()
-		state := s.quizStates[user.TelegramID]
-		s.quizMu.Unlock()
-		if state != nil {
-			_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, opt))
 			edit := tgbotapi.NewEditMessageReplyMarkup(cb.Message.Chat.ID, cb.Message.MessageID, tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
 			_, _ = s.bot.Request(edit)
-			s.acceptQuizAnswerAndAskNext(ctx, user, cb.Message.Chat.ID, opt)
+			s.cmdQuiz(ctx, user, cb.Message.Chat.ID, rest)
 			return
 		}
+	}
+	if len(data) > 11 && data[:11] == "checklists:" {
+		moduleSlug := data[11:]
+		_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, ""))
+		edit := tgbotapi.NewEditMessageReplyMarkup(cb.Message.Chat.ID, cb.Message.MessageID, tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
+		_, _ = s.bot.Request(edit)
+		s.cmdChecklists(ctx, user, cb.Message.Chat.ID, moduleSlug)
+		return
 	}
 	_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, ""))
 }
