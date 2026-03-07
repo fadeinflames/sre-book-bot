@@ -1,5 +1,0 @@
-linters-settings:
-  iface:
-    enable:
-      - unused
-      - opaque

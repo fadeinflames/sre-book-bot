@@ -1,5 +1,0 @@
-linters-settings:
-  nilnil:
-    checked-types:
-      - ptr
-      - uintptr

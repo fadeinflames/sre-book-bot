@@ -1,5 +1,0 @@
-extraIgnoreSigs:
-- json.Marshal(
-
-ignoreSigs:
-  - errors.New(

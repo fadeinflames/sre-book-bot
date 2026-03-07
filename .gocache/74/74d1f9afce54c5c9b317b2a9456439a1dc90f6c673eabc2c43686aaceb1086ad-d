@@ -1,7 +1,0 @@
-./basepath.go
-./filecache.go
-./files.go
-./fsutils.go
-./fsutils_unix.go
-./linecache.go
-./path_unix.go
