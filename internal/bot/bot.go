@@ -105,7 +105,9 @@ func (s *Service) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 
 	switch cmd {
 	case "start":
-		s.sendText(msg.Chat.ID, "Привет! Я SRE Learning Bot.\nКоманды: /roadmap /lesson /done <lesson_id> /quiz <module_slug> /review /progress /sources <module_slug> /checklists <module_slug> /submit_checklist <id> <notes>")
+		s.sendText(msg.Chat.ID, s.quickStartText())
+	case "help":
+		s.sendText(msg.Chat.ID, s.quickStartText())
 	case "roadmap":
 		s.cmdRoadmap(ctx, user, msg.Chat.ID)
 	case "lesson":
@@ -121,7 +123,7 @@ func (s *Service) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	case "checklists":
 		s.cmdChecklists(ctx, msg.Chat.ID, args)
 	case "sources":
-		s.cmdSources(ctx, msg.Chat.ID, args)
+		s.cmdSources(ctx, user, msg.Chat.ID, args)
 	case "submit_checklist":
 		s.cmdSubmitChecklist(ctx, user, msg.Chat.ID, args)
 	case "mentor_report":
@@ -171,6 +173,7 @@ func (s *Service) cmdRoadmap(ctx context.Context, user app.User, chatID int64) {
 		}
 		fmt.Fprintf(&b, "- %s (%s): lessons %d/%d, mastery %.0f%%\n", m.Slug, status, m.LessonCompleted, m.LessonTotal, m.MasteryScore*100)
 	}
+	b.WriteString("\nКак начать: /lesson\nПосле чтения урока: /done <lesson_id>\nДальше: /quiz <module_slug>")
 	s.sendText(chatID, b.String())
 }
 
@@ -182,12 +185,21 @@ func (s *Service) cmdLesson(ctx context.Context, user app.User, chatID int64) {
 	}
 	for _, m := range roadmap {
 		if m.NextLessonID > 0 {
-			text := fmt.Sprintf("*%s* / lesson_id=%d\n%s", m.NextLessonTitle, m.NextLessonID, m.NextLessonContent)
+			text := fmt.Sprintf(
+				"*%s*\nmodule=%s, lesson_id=%d\n\n%s\n\nЧто делать дальше:\n1) Изучи материал\n2) Отметь прохождение: /done %d\n3) Пройди квиз модуля: /quiz %s\n4) Источники: /sources %s",
+				m.NextLessonTitle,
+				m.Slug,
+				m.NextLessonID,
+				m.NextLessonContent,
+				m.NextLessonID,
+				m.Slug,
+				m.Slug,
+			)
 			s.sendText(chatID, text)
 			return
 		}
 	}
-	s.sendText(chatID, "Все уроки по текущему roadmap завершены.")
+	s.sendText(chatID, "Все уроки по roadmap завершены.\nСледующий шаг: /review и /mentor_report (для ментора).")
 }
 
 func (s *Service) cmdDone(ctx context.Context, user app.User, chatID int64, args string) {
@@ -382,10 +394,20 @@ func (s *Service) cmdChecklists(ctx context.Context, chatID int64, moduleSlug st
 	s.sendText(chatID, b.String())
 }
 
-func (s *Service) cmdSources(ctx context.Context, chatID int64, moduleSlug string) {
+func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, moduleSlug string) {
 	moduleSlug = strings.TrimSpace(moduleSlug)
 	if moduleSlug == "" {
-		s.sendText(chatID, "Использование: /sources <module_slug>")
+		roadmap, err := s.store.GetRoadmap(ctx, user.ID)
+		if err != nil || len(roadmap) == 0 {
+			s.sendText(chatID, "Использование: /sources <module_slug>\nСначала открой roadmap: /roadmap")
+			return
+		}
+		var b strings.Builder
+		b.WriteString("Укажи модуль: /sources <module_slug>\nДоступные модули:\n")
+		for _, m := range roadmap {
+			fmt.Fprintf(&b, "- %s\n", m.Slug)
+		}
+		s.sendText(chatID, b.String())
 		return
 	}
 	resources, err := s.store.GetModuleResources(ctx, moduleSlug)
@@ -399,6 +421,25 @@ func (s *Service) cmdSources(ctx context.Context, chatID int64, moduleSlug strin
 		fmt.Fprintf(&b, "- %s: %s\n", r.Title, r.URL)
 	}
 	s.sendText(chatID, b.String())
+}
+
+func (s *Service) quickStartText() string {
+	return strings.Join([]string{
+		"Привет! Я SRE Learning Bot.",
+		"",
+		"Быстрый старт (ничего отдельно активировать не нужно):",
+		"1) Посмотри учебный путь: /roadmap",
+		"2) Возьми следующий урок: /lesson",
+		"3) После урока отметь прогресс: /done <lesson_id>",
+		"4) Проверь знания: /quiz <module_slug>",
+		"5) Посмотри материалы модуля: /sources <module_slug>",
+		"",
+		"Дополнительно:",
+		"- прогресс: /progress",
+		"- повторение: /review",
+		"- чеклисты: /checklists <module_slug>",
+		"- отправка чеклиста: /submit_checklist <id> <notes>",
+	}, "\n")
 }
 
 func (s *Service) cmdSubmitChecklist(ctx context.Context, user app.User, chatID int64, args string) {
