@@ -1,0 +1,11 @@
+./checkstyle.go
+./codeclimate.go
+./githubaction.go
+./html.go
+./json.go
+./junitxml.go
+./printer.go
+./sarif.go
+./tab.go
+./teamcity.go
+./text.go

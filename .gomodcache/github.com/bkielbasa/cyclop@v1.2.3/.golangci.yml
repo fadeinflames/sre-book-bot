@@ -1,0 +1,25 @@
+linters-settings:
+  goconst:
+    min-len: 2
+    min-occurrences: 3
+  misspell:
+    locale: US
+
+linters:
+  enable-all: true
+  disable:
+  - exportloopref # deprecated
+  - execinquery # deprecated
+  - lll
+  - prealloc
+  - dupl
+  - wsl
+  - depguard
+  - nilnil
+  - exhaustruct
+  - nlreturn
+  - paralleltest
+  - testpackage
+  - gomnd
+  - gocognit
+  - nestif

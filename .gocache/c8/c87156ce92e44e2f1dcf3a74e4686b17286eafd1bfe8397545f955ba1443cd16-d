@@ -1,0 +1,9 @@
+./analyzer.go
+./call_list.go
+./config.go
+./errors.go
+./helpers.go
+./import_tracker.go
+./report.go
+./resolve.go
+./rule.go

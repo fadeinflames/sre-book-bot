@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: v1.64.4
+        args: --timeout=5m
+
+    - name: Unit Test and Coverage
+      run: go test -covermode=count -coverprofile cover.out ./...
+
+    - uses: shogo82148/actions-goveralls@v1
+      with:
+        path-to-profile: cover.out
+
+    - name: CLI Test
+      run: make test-cli
+
+    # make sure we can build the cli
+    - name: Build
+      run: |
+        make build
+        git diff --exit-code

@@ -1,0 +1,67 @@
+version: 2
+
+project_name: ireturn
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - binary: ireturn
+    env:
+    - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - 386
+      - arm64
+      - arm
+    goarm:
+      - 6
+    ignore:
+      - goos: windows
+        goarm: 6
+      - goos: windows
+        goarch: arm64
+      - goos: linux
+        goarm: 6
+      - goos: darwin
+        goarch: 386
+    main: ./cmd/ireturn/
+    flags:
+      - -trimpath
+    ldflags: -s -w
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '(?i)^docs?:'
+      - '(?i)^docs\([^:]+\):'
+      - '(?i)^docs\[[^:]+\]:'
+      - '^tests?:'
+      - '(?i)^dev:'
+      - Merge pull request
+      - Merge branch
+
+archives:
+  - name_template: >-
+        {{- .ProjectName }}_
+        {{- .Os }}_
+        {{- if eq .Arch "amd64" }}x86_64
+        {{- else if eq .Arch "386" }}i386
+        {{- else }}{{ .Arch }}{{ end }}
+        {{- if .Arm }}v{{ .Arm }}{{ end }}
+        {{- if .Mips }}_{{ .Mips }}{{ end -}}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - readme.md

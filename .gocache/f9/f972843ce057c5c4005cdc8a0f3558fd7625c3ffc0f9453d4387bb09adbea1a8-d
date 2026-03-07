@@ -1,0 +1,10 @@
+./cache.go
+./config.go
+./config_verify.go
+./custom.go
+./flagsets.go
+./help.go
+./linters.go
+./root.go
+./run.go
+./version.go

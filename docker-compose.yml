@@ -1,0 +1,107 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-srebot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-srebot}
+      POSTGRES_DB: ${POSTGRES_DB:-srebot}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-srebot} -d ${POSTGRES_DB:-srebot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  migrate:
+    image: migrate/migrate:v4.18.2
+    volumes:
+      - ./migrations:/migrations:ro
+    command: ["-path", "/migrations", "-database", "postgres://${POSTGRES_USER:-srebot}:${POSTGRES_PASSWORD:-srebot}@postgres:5432/${POSTGRES_DB:-srebot}?sslmode=disable", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/usr/local/bin/api"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-srebot}:${POSTGRES_PASSWORD:-srebot}@postgres:5432/${POSTGRES_DB:-srebot}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      API_ADDR: :8080
+      BOT_MODE: polling
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/usr/local/bin/bot"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-srebot}:${POSTGRES_PASSWORD:-srebot}@postgres:5432/${POSTGRES_DB:-srebot}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      BOT_MODE: polling
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/usr/local/bin/worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-srebot}:${POSTGRES_PASSWORD:-srebot}@postgres:5432/${POSTGRES_DB:-srebot}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      BOT_MODE: polling
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

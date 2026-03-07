@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: "daily"
+    assignees:
+      - ckaznocha
+    reviewers:
+      - ckaznocha
+    commit-message:
+      prefix: "automated"
+      include: "scope"
+    ignore:
+      - dependency-name: github.com/gostaticanalysis/testutil
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    assignees:
+      - ckaznocha
+    reviewers:
+      - ckaznocha
+    commit-message:
+      prefix: "automated"
+      include: "scope"

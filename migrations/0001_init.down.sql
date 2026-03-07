@@ -1,0 +1,14 @@
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS review_items;
+DROP TABLE IF EXISTS learning_progress;
+DROP TABLE IF EXISTS checklist_submissions;
+DROP TABLE IF EXISTS checklist_items;
+DROP TABLE IF EXISTS checklists;
+DROP TABLE IF EXISTS quiz_answers;
+DROP TABLE IF EXISTS quiz_attempts;
+DROP TABLE IF EXISTS quiz_questions;
+DROP TABLE IF EXISTS lesson_completions;
+DROP TABLE IF EXISTS resources;
+DROP TABLE IF EXISTS lessons;
+DROP TABLE IF EXISTS modules;
+DROP TABLE IF EXISTS users;
