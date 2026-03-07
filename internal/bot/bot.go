@@ -26,7 +26,7 @@ type Service struct {
 	reviewFlow map[int64][]app.ReviewCard
 }
 
-// Тексты кнопок главного меню (ReplyKeyboard). При нажатии пользователь отправляет их как обычное сообщение.
+// Тексты кнопок ReplyKeyboard. Клавиатура переключается в зависимости от раздела.
 const (
 	btnRoadmap    = "📖 Roadmap"
 	btnLesson     = "📚 Урок"
@@ -36,6 +36,7 @@ const (
 	btnProgress   = "📊 Прогресс"
 	btnChecklists = "✅ Чеклисты"
 	btnHelp       = "❓ Помощь"
+	btnBack       = "◀️ Назад"
 )
 
 type quizState struct {
@@ -182,6 +183,9 @@ func (s *Service) handleNonCommand(ctx context.Context, user app.User, msg *tgbo
 	case btnHelp:
 		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
 		return
+	case btnBack:
+		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
+		return
 	}
 	if isOptionAnswer(text) {
 		s.quizMu.Lock()
@@ -199,11 +203,11 @@ func (s *Service) handleNonCommand(ctx context.Context, user app.User, msg *tgbo
 func (s *Service) cmdRoadmap(ctx context.Context, user app.User, chatID int64) {
 	roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 	if err != nil {
-		s.sendText(chatID, "Не смог загрузить roadmap.")
+		s.sendTextWithMainMenu(chatID, "Не смог загрузить roadmap.")
 		return
 	}
 	if len(roadmap) == 0 {
-		s.sendText(chatID, "Контент пока не загружен.")
+		s.sendTextWithMainMenu(chatID, "Контент пока не загружен.")
 		return
 	}
 	var b strings.Builder
@@ -214,8 +218,8 @@ func (s *Service) cmdRoadmap(ctx context.Context, user app.User, chatID int64) {
 		}
 		fmt.Fprintf(&b, "- %s (%s): lessons %d/%d, mastery %.0f%%\n", m.Slug, status, m.LessonCompleted, m.LessonTotal, m.MasteryScore*100)
 	}
-	b.WriteString("\nКак начать: /lesson\nПосле чтения урока: /done (lesson_id)\nДальше: /quiz (module_slug)")
-	s.sendText(chatID, b.String())
+	b.WriteString("\nКнопки ниже: Урок, Дальше, Квиз, Прогресс. Назад — в главное меню.")
+	s.sendTextWithLearningMenu(chatID, b.String())
 }
 
 func (s *Service) cmdLesson(ctx context.Context, user app.User, chatID int64) {
@@ -231,7 +235,7 @@ const maxChunkLen = 3500
 func (s *Service) sendNextLessonChunkOrCard(ctx context.Context, user app.User, chatID int64, onlyNextChunk bool) {
 	roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 	if err != nil {
-		s.sendText(chatID, "Ошибка загрузки урока.")
+		s.sendTextWithLearningMenu(chatID, "Ошибка загрузки урока.")
 		return
 	}
 	var nextMod *app.ModuleProgress
@@ -242,7 +246,7 @@ func (s *Service) sendNextLessonChunkOrCard(ctx context.Context, user app.User, 
 		}
 	}
 	if nextMod == nil {
-		s.sendText(chatID, "Все уроки по roadmap завершены.\nСледующий шаг: /review и /mentor_report (для ментора).")
+		s.sendTextWithMainMenu(chatID, "Все уроки по roadmap завершены.\nСледующий шаг: Повторение и /mentor_report (для ментора).")
 		return
 	}
 	lessonID := nextMod.NextLessonID
@@ -251,7 +255,7 @@ func (s *Service) sendNextLessonChunkOrCard(ctx context.Context, user app.User, 
 		s.logger.Warn("get lesson chunks failed", "err", err, "lesson_id", lessonID)
 	}
 	if onlyNextChunk && len(chunks) == 0 {
-		s.sendText(chatID, "У этого урока нет порций текста. Используй /lesson чтобы увидеть материалы.")
+		s.sendTextWithLearningMenu(chatID, "У этого урока нет порций текста. Используй Урок чтобы увидеть материалы.")
 		return
 	}
 	progress, err := s.store.GetUserLessonReadingProgress(ctx, user.ID, lessonID)
@@ -265,14 +269,14 @@ func (s *Service) sendNextLessonChunkOrCard(ctx context.Context, user app.User, 
 			chunk = chunk[:maxChunkLen] + "..."
 		}
 		header := fmt.Sprintf("Урок: %s\nmodule=%s, часть %d из %d\n\n", nextMod.NextLessonTitle, nextMod.Slug, progress+1, len(chunks))
-		s.sendText(chatID, header+chunk)
+		s.sendTextWithLearningMenu(chatID, header+chunk)
 		nextIdx := progress + 1
 		_ = s.store.SetUserLessonReadingProgress(ctx, user.ID, lessonID, nextIdx)
 		if nextIdx < len(chunks) {
-			s.sendText(chatID, "Продолжить? /lesson_next")
+			s.sendTextWithLearningMenu(chatID, "Продолжить? Нажми Дальше.")
 			return
 		}
-		s.sendText(chatID, fmt.Sprintf("Конец урока.\nОтметь прохождение: /done %d\nПотом квиз: /quiz %s", lessonID, nextMod.Slug))
+		s.sendTextWithLearningMenu(chatID, fmt.Sprintf("Конец урока.\nОтметь прохождение: /done %d\nПотом квиз по модулю: /quiz %s", lessonID, nextMod.Slug))
 		return
 	}
 	// Нет фрагментов или всё уже прочитано — показываем карточку урока и ссылки на материалы
@@ -301,32 +305,32 @@ func (s *Service) sendNextLessonChunkOrCard(ctx context.Context, user app.User, 
 		nextMod.Slug,
 		nextMod.Slug,
 	)
-	s.sendText(chatID, text)
+	s.sendTextWithLearningMenu(chatID, text)
 }
 
 func (s *Service) cmdDone(ctx context.Context, user app.User, chatID int64, args string) {
 	lessonID, err := strconv.ParseInt(strings.TrimSpace(args), 10, 64)
 	if err != nil || lessonID <= 0 {
-		s.sendText(chatID, "Использование: /done (lesson_id)")
+		s.sendTextWithLearningMenu(chatID, "Использование: /done (lesson_id)")
 		return
 	}
 	if err := s.store.MarkLessonDone(ctx, user.ID, lessonID); err != nil {
-		s.sendText(chatID, "Не удалось отметить урок.")
+		s.sendTextWithLearningMenu(chatID, "Не удалось отметить урок.")
 		return
 	}
 	_ = s.store.LogEvent(ctx, user.ID, "lesson_done", map[string]any{"lesson_id": lessonID})
-	s.sendText(chatID, "Урок отмечен как пройденный.")
+	s.sendTextWithLearningMenu(chatID, "Урок отмечен как пройденный.")
 }
 
 func (s *Service) cmdQuiz(ctx context.Context, user app.User, chatID int64, args string) {
 	moduleSlug := strings.TrimSpace(args)
 	if moduleSlug == "" {
-		s.sendText(chatID, "Использование: /quiz (module_slug)")
+		s.sendTextWithMainMenu(chatID, "Использование: /quiz (module_slug). Укажи slug модуля из roadmap.")
 		return
 	}
 	moduleID, qs, err := s.store.GetQuizQuestionsByModule(ctx, moduleSlug)
 	if err != nil || len(qs) == 0 {
-		s.sendText(chatID, "Не нашел вопросы для модуля.")
+		s.sendTextWithMainMenu(chatID, "Не нашел вопросы для модуля.")
 		return
 	}
 	state := &quizState{
@@ -339,7 +343,7 @@ func (s *Service) cmdQuiz(ctx context.Context, user app.User, chatID int64, args
 	s.quizStates[user.TelegramID] = state
 	s.quizMu.Unlock()
 
-	s.sendText(chatID, fmt.Sprintf("Старт квиза по %s (%d вопросов). Выбери ответ кнопкой ниже.", moduleSlug, len(qs)))
+	s.sendTextWithLearningMenu(chatID, fmt.Sprintf("Старт квиза по %s (%d вопросов). Выбери ответ кнопкой ниже. Назад — выйти в меню.", moduleSlug, len(qs)))
 	s.askQuizQuestion(chatID, state)
 }
 
@@ -384,7 +388,7 @@ func (s *Service) acceptQuizAnswerAndAskNext(ctx context.Context, user app.User,
 
 	result, err := s.store.SubmitQuiz(ctx, user.ID, state.ModuleID, state.Answers)
 	if err != nil {
-		s.sendText(chatID, "Не удалось сохранить результаты квиза.")
+		s.sendTextWithMainMenu(chatID, "Не удалось сохранить результаты квиза.")
 		return
 	}
 	_ = s.store.LogEvent(ctx, user.ID, "quiz_submitted", map[string]any{"module_id": state.ModuleID, "score": result.Score, "max": result.MaxScore})
@@ -397,7 +401,7 @@ func (s *Service) acceptQuizAnswerAndAskNext(ctx context.Context, user app.User,
 		}
 		fmt.Fprintf(&b, "- Q%d: неверно (%s), правильно %s\n  %s\n  %s\n", d.QuestionID, d.Selected, d.CorrectOpt, d.Explanation, d.SourceURL)
 	}
-	s.sendText(chatID, b.String())
+	s.sendTextWithMainMenu(chatID, b.String())
 
 	s.quizMu.Lock()
 	delete(s.quizStates, user.TelegramID)
@@ -407,17 +411,17 @@ func (s *Service) acceptQuizAnswerAndAskNext(ctx context.Context, user app.User,
 func (s *Service) cmdReview(ctx context.Context, user app.User, chatID int64) {
 	cards, err := s.store.GetDueReviewCards(ctx, user.ID, 10)
 	if err != nil {
-		s.sendText(chatID, "Ошибка при загрузке карточек повторения.")
+		s.sendTextWithMainMenu(chatID, "Ошибка при загрузке карточек повторения.")
 		return
 	}
 	if len(cards) == 0 {
-		s.sendText(chatID, "Сейчас нет карточек на повторение.")
+		s.sendTextWithMainMenu(chatID, "Сейчас нет карточек на повторение.")
 		return
 	}
 	s.reviewMu.Lock()
 	s.reviewFlow[user.TelegramID] = cards
 	s.reviewMu.Unlock()
-	s.sendText(chatID, "Запускаю review-сессию. Ответь A/B/C/D.")
+	s.sendTextWithLearningMenu(chatID, "Запускаю review-сессию. Ответь A/B/C/D. Назад — выйти в меню.")
 	s.askNextReviewCard(chatID, fmt.Sprintf("Review 1/%d", len(cards)), cards[0])
 }
 
@@ -439,20 +443,20 @@ func (s *Service) acceptReviewAnswer(ctx context.Context, user app.User, chatID 
 		quality = 5
 	}
 	if err := s.store.ApplyReviewScore(ctx, card.ID, quality); err != nil {
-		s.sendText(chatID, "Не удалось сохранить результат review.")
+		s.sendTextWithMainMenu(chatID, "Не удалось сохранить результат review.")
 		return
 	}
 	if correct {
-		s.sendText(chatID, "Верно. Переходим дальше.")
+		s.sendTextWithLearningMenu(chatID, "Верно. Переходим дальше.")
 	} else {
-		s.sendText(chatID, fmt.Sprintf("Неверно. Правильный ответ: %s\n%s\nИсточник: %s", card.Correct, card.Explanation, card.SourceURL))
+		s.sendTextWithLearningMenu(chatID, fmt.Sprintf("Неверно. Правильный ответ: %s\n%s\nИсточник: %s", card.Correct, card.Explanation, card.SourceURL))
 	}
 
 	if len(remaining) == 0 {
 		s.reviewMu.Lock()
 		delete(s.reviewFlow, user.TelegramID)
 		s.reviewMu.Unlock()
-		s.sendText(chatID, "Review-сессия завершена.")
+		s.sendTextWithMainMenu(chatID, "Review-сессия завершена.")
 		return
 	}
 	title := fmt.Sprintf("Следующая карточка (%d осталось)", len(remaining))
@@ -461,13 +465,13 @@ func (s *Service) acceptReviewAnswer(ctx context.Context, user app.User, chatID 
 
 func (s *Service) askNextReviewCard(chatID int64, title string, card app.ReviewCard) {
 	text := fmt.Sprintf("%s\n%s\nA) %s\nB) %s\nC) %s\nD) %s", title, card.Question, card.OptionA, card.OptionB, card.OptionC, card.OptionD)
-	s.sendText(chatID, text)
+	s.sendTextWithLearningMenu(chatID, text)
 }
 
 func (s *Service) cmdProgress(ctx context.Context, user app.User, chatID int64) {
 	roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 	if err != nil {
-		s.sendText(chatID, "Не удалось получить прогресс.")
+		s.sendTextWithMainMenu(chatID, "Не удалось получить прогресс.")
 		return
 	}
 	var completed int
@@ -482,18 +486,18 @@ func (s *Service) cmdProgress(ctx context.Context, user app.User, chatID int64) 
 	if len(roadmap) > 0 {
 		avg = mastery / float64(len(roadmap))
 	}
-	s.sendText(chatID, fmt.Sprintf("Модулей завершено: %d/%d\nСредний mastery: %.0f%%", completed, len(roadmap), avg*100))
+	s.sendTextWithMainMenu(chatID, fmt.Sprintf("Модулей завершено: %d/%d\nСредний mastery: %.0f%%", completed, len(roadmap), avg*100))
 }
 
 func (s *Service) cmdChecklists(ctx context.Context, chatID int64, moduleSlug string) {
 	moduleSlug = strings.TrimSpace(moduleSlug)
 	if moduleSlug == "" {
-		s.sendText(chatID, "Использование: /checklists (module_slug)")
+		s.sendTextWithMainMenu(chatID, "Использование: /checklists (module_slug)")
 		return
 	}
 	items, err := s.store.GetChecklistsByModule(ctx, moduleSlug)
 	if err != nil || len(items) == 0 {
-		s.sendText(chatID, "Чеклисты не найдены.")
+		s.sendTextWithMainMenu(chatID, "Чеклисты не найдены.")
 		return
 	}
 	var b strings.Builder
@@ -505,7 +509,7 @@ func (s *Service) cmdChecklists(ctx context.Context, chatID int64, moduleSlug st
 		}
 		fmt.Fprintln(&b)
 	}
-	s.sendText(chatID, b.String())
+	s.sendTextWithMainMenu(chatID, b.String())
 }
 
 func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, moduleSlug string) {
@@ -513,7 +517,7 @@ func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, m
 	if moduleSlug == "" {
 		roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 		if err != nil || len(roadmap) == 0 {
-			s.sendText(chatID, "Использование: /sources (module_slug)\nСначала открой roadmap: /roadmap")
+			s.sendTextWithMainMenu(chatID, "Использование: /sources (module_slug). Сначала открой Roadmap.")
 			return
 		}
 		var b strings.Builder
@@ -521,12 +525,12 @@ func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, m
 		for _, m := range roadmap {
 			fmt.Fprintf(&b, "- %s\n", m.Slug)
 		}
-		s.sendText(chatID, b.String())
+		s.sendTextWithMainMenu(chatID, b.String())
 		return
 	}
 	resources, err := s.store.GetModuleResources(ctx, moduleSlug)
 	if err != nil || len(resources) == 0 {
-		s.sendText(chatID, "Источники не найдены.")
+		s.sendTextWithMainMenu(chatID, "Источники не найдены.")
 		return
 	}
 	var b strings.Builder
@@ -534,7 +538,7 @@ func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, m
 	for _, r := range resources {
 		fmt.Fprintf(&b, "- %s: %s\n", r.Title, r.URL)
 	}
-	s.sendText(chatID, b.String())
+	s.sendTextWithMainMenu(chatID, b.String())
 }
 
 func (s *Service) quickStartText() string {
@@ -574,11 +578,36 @@ func (s *Service) mainMenuKeyboard() tgbotapi.ReplyKeyboardMarkup {
 	return kb
 }
 
+// Клавиатура раздела «обучение»: после Roadmap / Урок / Дальше.
+func (s *Service) learningKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	kb := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(btnLesson),
+			tgbotapi.NewKeyboardButton(btnLessonNext),
+			tgbotapi.NewKeyboardButton(btnQuiz),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(btnProgress),
+			tgbotapi.NewKeyboardButton(btnBack),
+		),
+	)
+	kb.ResizeKeyboard = true
+	return kb
+}
+
 func (s *Service) sendTextWithMainMenu(chatID int64, text string) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ReplyMarkup = s.mainMenuKeyboard()
 	if _, err := s.bot.Send(msg); err != nil {
 		s.logger.Error("send message with menu failed", "err", err, "chat_id", chatID)
+	}
+}
+
+func (s *Service) sendTextWithLearningMenu(chatID int64, text string) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyMarkup = s.learningKeyboard()
+	if _, err := s.bot.Send(msg); err != nil {
+		s.logger.Error("send message with learning menu failed", "err", err, "chat_id", chatID)
 	}
 }
 
