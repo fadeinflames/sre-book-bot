@@ -34,9 +34,11 @@ const (
 	btnQuiz       = "❓ Квиз"
 	btnReview     = "🔄 Повторение"
 	btnProgress   = "📊 Прогресс"
-	btnChecklists = "✅ Чеклисты"
-	btnHelp       = "❓ Помощь"
-	btnBack       = "◀️ Назад"
+	btnChecklists     = "✅ Чеклисты"
+	btnHelp           = "❓ Помощь"
+	btnBack           = "◀️ Назад"
+	btnMentorReport   = "📊 Студенты"
+	btnPendingReviews = "📋 На проверке"
 )
 
 type quizState struct {
@@ -118,9 +120,9 @@ func (s *Service) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 
 	switch cmd {
 	case "start":
-		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
+		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText(), user)
 	case "help":
-		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
+		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText(), user)
 	case "roadmap":
 		s.cmdRoadmap(ctx, user, msg.Chat.ID)
 	case "lesson":
@@ -136,7 +138,7 @@ func (s *Service) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	case "progress":
 		s.cmdProgress(ctx, user, msg.Chat.ID)
 	case "checklists":
-		s.cmdChecklists(ctx, msg.Chat.ID, args)
+		s.cmdChecklists(ctx, user, msg.Chat.ID, args)
 	case "sources":
 		s.cmdSources(ctx, user, msg.Chat.ID, args)
 	case "submit_checklist":
@@ -178,13 +180,19 @@ func (s *Service) handleNonCommand(ctx context.Context, user app.User, msg *tgbo
 		s.cmdProgress(ctx, user, msg.Chat.ID)
 		return
 	case btnChecklists:
-		s.cmdChecklists(ctx, msg.Chat.ID, "")
+		s.cmdChecklists(ctx, user, msg.Chat.ID, "")
 		return
 	case btnHelp:
-		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
+		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText(), user)
 		return
 	case btnBack:
-		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
+		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText(), user)
+		return
+	case btnMentorReport:
+		s.cmdMentorReport(ctx, user, msg.Chat.ID)
+		return
+	case btnPendingReviews:
+		s.cmdPendingChecklistReviews(ctx, user, msg.Chat.ID)
 		return
 	}
 	if isOptionAnswer(text) {
@@ -203,11 +211,11 @@ func (s *Service) handleNonCommand(ctx context.Context, user app.User, msg *tgbo
 func (s *Service) cmdRoadmap(ctx context.Context, user app.User, chatID int64) {
 	roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 	if err != nil {
-		s.sendTextWithMainMenu(chatID, "Не смог загрузить roadmap.")
+		s.sendTextWithMainMenu(chatID, "Не смог загрузить roadmap.", user)
 		return
 	}
 	if len(roadmap) == 0 {
-		s.sendTextWithMainMenu(chatID, "Контент пока не загружен.")
+		s.sendTextWithMainMenu(chatID, "Контент пока не загружен.", user)
 		return
 	}
 	var b strings.Builder
@@ -246,7 +254,7 @@ func (s *Service) sendNextLessonChunkOrCard(ctx context.Context, user app.User, 
 		}
 	}
 	if nextMod == nil {
-		s.sendTextWithMainMenu(chatID, "Все уроки по roadmap завершены.\nСледующий шаг: Повторение и /mentor_report (для ментора).")
+		s.sendTextWithMainMenu(chatID, "Все уроки по roadmap завершены.\nСледующий шаг: Повторение. Для ментора — кнопка Студенты.", user)
 		return
 	}
 	lessonID := nextMod.NextLessonID
@@ -325,12 +333,12 @@ func (s *Service) cmdDone(ctx context.Context, user app.User, chatID int64, args
 func (s *Service) cmdQuiz(ctx context.Context, user app.User, chatID int64, args string) {
 	moduleSlug := strings.TrimSpace(args)
 	if moduleSlug == "" {
-		s.sendTextWithMainMenu(chatID, "Использование: /quiz (module_slug). Укажи slug модуля из roadmap.")
+		s.sendTextWithMainMenu(chatID, "Использование: /quiz (module_slug). Укажи slug модуля из roadmap.", user)
 		return
 	}
 	moduleID, qs, err := s.store.GetQuizQuestionsByModule(ctx, moduleSlug)
 	if err != nil || len(qs) == 0 {
-		s.sendTextWithMainMenu(chatID, "Не нашел вопросы для модуля.")
+		s.sendTextWithMainMenu(chatID, "Не нашел вопросы для модуля.", user)
 		return
 	}
 	state := &quizState{
@@ -388,7 +396,7 @@ func (s *Service) acceptQuizAnswerAndAskNext(ctx context.Context, user app.User,
 
 	result, err := s.store.SubmitQuiz(ctx, user.ID, state.ModuleID, state.Answers)
 	if err != nil {
-		s.sendTextWithMainMenu(chatID, "Не удалось сохранить результаты квиза.")
+		s.sendTextWithMainMenu(chatID, "Не удалось сохранить результаты квиза.", user)
 		return
 	}
 	_ = s.store.LogEvent(ctx, user.ID, "quiz_submitted", map[string]any{"module_id": state.ModuleID, "score": result.Score, "max": result.MaxScore})
@@ -401,7 +409,7 @@ func (s *Service) acceptQuizAnswerAndAskNext(ctx context.Context, user app.User,
 		}
 		fmt.Fprintf(&b, "- Q%d: неверно (%s), правильно %s\n  %s\n  %s\n", d.QuestionID, d.Selected, d.CorrectOpt, d.Explanation, d.SourceURL)
 	}
-	s.sendTextWithMainMenu(chatID, b.String())
+	s.sendTextWithMainMenu(chatID, b.String(), user)
 
 	s.quizMu.Lock()
 	delete(s.quizStates, user.TelegramID)
@@ -411,11 +419,11 @@ func (s *Service) acceptQuizAnswerAndAskNext(ctx context.Context, user app.User,
 func (s *Service) cmdReview(ctx context.Context, user app.User, chatID int64) {
 	cards, err := s.store.GetDueReviewCards(ctx, user.ID, 10)
 	if err != nil {
-		s.sendTextWithMainMenu(chatID, "Ошибка при загрузке карточек повторения.")
+		s.sendTextWithMainMenu(chatID, "Ошибка при загрузке карточек повторения.", user)
 		return
 	}
 	if len(cards) == 0 {
-		s.sendTextWithMainMenu(chatID, "Сейчас нет карточек на повторение.")
+		s.sendTextWithMainMenu(chatID, "Сейчас нет карточек на повторение.", user)
 		return
 	}
 	s.reviewMu.Lock()
@@ -443,7 +451,7 @@ func (s *Service) acceptReviewAnswer(ctx context.Context, user app.User, chatID 
 		quality = 5
 	}
 	if err := s.store.ApplyReviewScore(ctx, card.ID, quality); err != nil {
-		s.sendTextWithMainMenu(chatID, "Не удалось сохранить результат review.")
+		s.sendTextWithMainMenu(chatID, "Не удалось сохранить результат review.", user)
 		return
 	}
 	if correct {
@@ -456,7 +464,7 @@ func (s *Service) acceptReviewAnswer(ctx context.Context, user app.User, chatID 
 		s.reviewMu.Lock()
 		delete(s.reviewFlow, user.TelegramID)
 		s.reviewMu.Unlock()
-		s.sendTextWithMainMenu(chatID, "Review-сессия завершена.")
+		s.sendTextWithMainMenu(chatID, "Review-сессия завершена.", user)
 		return
 	}
 	title := fmt.Sprintf("Следующая карточка (%d осталось)", len(remaining))
@@ -471,7 +479,7 @@ func (s *Service) askNextReviewCard(chatID int64, title string, card app.ReviewC
 func (s *Service) cmdProgress(ctx context.Context, user app.User, chatID int64) {
 	roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 	if err != nil {
-		s.sendTextWithMainMenu(chatID, "Не удалось получить прогресс.")
+		s.sendTextWithMainMenu(chatID, "Не удалось получить прогресс.", user)
 		return
 	}
 	var completed int
@@ -486,18 +494,18 @@ func (s *Service) cmdProgress(ctx context.Context, user app.User, chatID int64) 
 	if len(roadmap) > 0 {
 		avg = mastery / float64(len(roadmap))
 	}
-	s.sendTextWithMainMenu(chatID, fmt.Sprintf("Модулей завершено: %d/%d\nСредний mastery: %.0f%%", completed, len(roadmap), avg*100))
+	s.sendTextWithMainMenu(chatID, fmt.Sprintf("Модулей завершено: %d/%d\nСредний mastery: %.0f%%", completed, len(roadmap), avg*100), user)
 }
 
-func (s *Service) cmdChecklists(ctx context.Context, chatID int64, moduleSlug string) {
+func (s *Service) cmdChecklists(ctx context.Context, user app.User, chatID int64, moduleSlug string) {
 	moduleSlug = strings.TrimSpace(moduleSlug)
 	if moduleSlug == "" {
-		s.sendTextWithMainMenu(chatID, "Использование: /checklists (module_slug)")
+		s.sendTextWithMainMenu(chatID, "Использование: /checklists (module_slug)", user)
 		return
 	}
 	items, err := s.store.GetChecklistsByModule(ctx, moduleSlug)
 	if err != nil || len(items) == 0 {
-		s.sendTextWithMainMenu(chatID, "Чеклисты не найдены.")
+		s.sendTextWithMainMenu(chatID, "Чеклисты не найдены.", user)
 		return
 	}
 	var b strings.Builder
@@ -509,7 +517,7 @@ func (s *Service) cmdChecklists(ctx context.Context, chatID int64, moduleSlug st
 		}
 		fmt.Fprintln(&b)
 	}
-	s.sendTextWithMainMenu(chatID, b.String())
+	s.sendTextWithMainMenu(chatID, b.String(), user)
 }
 
 func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, moduleSlug string) {
@@ -517,7 +525,7 @@ func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, m
 	if moduleSlug == "" {
 		roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 		if err != nil || len(roadmap) == 0 {
-			s.sendTextWithMainMenu(chatID, "Использование: /sources (module_slug). Сначала открой Roadmap.")
+			s.sendTextWithMainMenu(chatID, "Использование: /sources (module_slug). Сначала открой Roadmap.", user)
 			return
 		}
 		var b strings.Builder
@@ -525,12 +533,12 @@ func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, m
 		for _, m := range roadmap {
 			fmt.Fprintf(&b, "- %s\n", m.Slug)
 		}
-		s.sendTextWithMainMenu(chatID, b.String())
+		s.sendTextWithMainMenu(chatID, b.String(), user)
 		return
 	}
 	resources, err := s.store.GetModuleResources(ctx, moduleSlug)
 	if err != nil || len(resources) == 0 {
-		s.sendTextWithMainMenu(chatID, "Источники не найдены.")
+		s.sendTextWithMainMenu(chatID, "Источники не найдены.", user)
 		return
 	}
 	var b strings.Builder
@@ -538,7 +546,7 @@ func (s *Service) cmdSources(ctx context.Context, user app.User, chatID int64, m
 	for _, r := range resources {
 		fmt.Fprintf(&b, "- %s: %s\n", r.Title, r.URL)
 	}
-	s.sendTextWithMainMenu(chatID, b.String())
+	s.sendTextWithMainMenu(chatID, b.String(), user)
 }
 
 func (s *Service) quickStartText() string {
@@ -557,8 +565,8 @@ func (s *Service) quickStartText() string {
 	}, "\n")
 }
 
-func (s *Service) mainMenuKeyboard() tgbotapi.ReplyKeyboardMarkup {
-	kb := tgbotapi.NewReplyKeyboard(
+func (s *Service) mainMenuKeyboard(user app.User) tgbotapi.ReplyKeyboardMarkup {
+	rows := [][]tgbotapi.KeyboardButton{
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(btnRoadmap),
 			tgbotapi.NewKeyboardButton(btnLesson),
@@ -573,8 +581,14 @@ func (s *Service) mainMenuKeyboard() tgbotapi.ReplyKeyboardMarkup {
 			tgbotapi.NewKeyboardButton(btnChecklists),
 			tgbotapi.NewKeyboardButton(btnHelp),
 		),
-	)
-	kb.ResizeKeyboard = true
+	}
+	if user.Role == app.RoleMentor || user.Role == app.RoleAdmin {
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(btnMentorReport),
+			tgbotapi.NewKeyboardButton(btnPendingReviews),
+		))
+	}
+	kb := tgbotapi.ReplyKeyboardMarkup{Keyboard: rows, ResizeKeyboard: true}
 	return kb
 }
 
@@ -595,9 +609,9 @@ func (s *Service) learningKeyboard() tgbotapi.ReplyKeyboardMarkup {
 	return kb
 }
 
-func (s *Service) sendTextWithMainMenu(chatID int64, text string) {
+func (s *Service) sendTextWithMainMenu(chatID int64, text string, user app.User) {
 	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ReplyMarkup = s.mainMenuKeyboard()
+	msg.ReplyMarkup = s.mainMenuKeyboard(user)
 	if _, err := s.bot.Send(msg); err != nil {
 		s.logger.Error("send message with menu failed", "err", err, "chat_id", chatID)
 	}
@@ -638,11 +652,11 @@ func (s *Service) cmdMentorReport(ctx context.Context, user app.User, chatID int
 	}
 	reports, err := s.store.ListJuniorReports(ctx)
 	if err != nil {
-		s.sendText(chatID, "Ошибка генерации отчета.")
+		s.sendTextWithMainMenu(chatID, "Ошибка генерации отчета.", user)
 		return
 	}
 	if len(reports) == 0 {
-		s.sendText(chatID, "Нет активных джунов.")
+		s.sendTextWithMainMenu(chatID, "Нет активных джунов.", user)
 		return
 	}
 	var b strings.Builder
@@ -655,7 +669,7 @@ func (s *Service) cmdMentorReport(ctx context.Context, user app.User, chatID int
 		fmt.Fprintf(&b, "completion: %.0f%%, mastery: %.0f%%\n", r.CompletionPct, r.MasteryAvg)
 		fmt.Fprintf(&b, "weak: %s\nactivity 7d/30d: %d/%d\nlast: %s\n\n", r.WeakModules, r.Activity7d, r.Activity30d, last)
 	}
-	s.sendText(chatID, b.String())
+	s.sendTextWithMainMenu(chatID, b.String(), user)
 }
 
 func (s *Service) cmdPendingChecklistReviews(ctx context.Context, user app.User, chatID int64) {
@@ -665,18 +679,18 @@ func (s *Service) cmdPendingChecklistReviews(ctx context.Context, user app.User,
 	}
 	list, err := s.store.ListPendingChecklistSubmissions(ctx)
 	if err != nil {
-		s.sendText(chatID, "Ошибка загрузки pending submissions.")
+		s.sendTextWithMainMenu(chatID, "Ошибка загрузки pending submissions.", user)
 		return
 	}
 	if len(list) == 0 {
-		s.sendText(chatID, "Нет pending submissions.")
+		s.sendTextWithMainMenu(chatID, "Нет pending submissions.", user)
 		return
 	}
 	var b strings.Builder
 	for _, it := range list {
 		fmt.Fprintf(&b, "submission_id=%d user_id=%d checklist_id=%d notes=%q\n", it.ID, it.UserID, it.ChecklistID, it.Notes)
 	}
-	s.sendText(chatID, b.String())
+	s.sendTextWithMainMenu(chatID, b.String(), user)
 }
 
 func (s *Service) cmdReviewSubmission(ctx context.Context, user app.User, chatID int64, args string) {
