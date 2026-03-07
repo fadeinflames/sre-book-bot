@@ -112,6 +112,8 @@ func (s *Service) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 		s.cmdRoadmap(ctx, user, msg.Chat.ID)
 	case "lesson":
 		s.cmdLesson(ctx, user, msg.Chat.ID)
+	case "lesson_next":
+		s.cmdLessonNext(ctx, user, msg.Chat.ID)
 	case "done":
 		s.cmdDone(ctx, user, msg.Chat.ID, args)
 	case "quiz":
@@ -178,46 +180,89 @@ func (s *Service) cmdRoadmap(ctx context.Context, user app.User, chatID int64) {
 }
 
 func (s *Service) cmdLesson(ctx context.Context, user app.User, chatID int64) {
+	s.sendNextLessonChunkOrCard(ctx, user, chatID, false)
+}
+
+func (s *Service) cmdLessonNext(ctx context.Context, user app.User, chatID int64) {
+	s.sendNextLessonChunkOrCard(ctx, user, chatID, true)
+}
+
+const maxChunkLen = 3500
+
+func (s *Service) sendNextLessonChunkOrCard(ctx context.Context, user app.User, chatID int64, onlyNextChunk bool) {
 	roadmap, err := s.store.GetRoadmap(ctx, user.ID)
 	if err != nil {
 		s.sendText(chatID, "Ошибка загрузки урока.")
 		return
 	}
-	for _, m := range roadmap {
-		if m.NextLessonID > 0 {
-			resources, err := s.store.GetLessonResources(ctx, m.NextLessonID)
-			if err != nil {
-				s.logger.Warn("load lesson resources failed", "err", err, "lesson_id", m.NextLessonID)
-			}
-			resourceText := "Материалы для этого урока пока не добавлены."
-			if len(resources) > 0 {
-				var rb strings.Builder
-				rb.WriteString("Материалы:\n")
-				for _, r := range resources {
-					url := r.URL
-					if strings.HasPrefix(url, "local://") {
-						url = strings.TrimPrefix(url, "local://") + " (локальный файл)"
-					}
-					fmt.Fprintf(&rb, "- %s: %s\n", r.Title, url)
-				}
-				resourceText = strings.TrimSpace(rb.String())
-			}
-			text := fmt.Sprintf(
-				"%s\nmodule=%s, lesson_id=%d\n\n%s\n\n%s\n\nЧто делать дальше:\n1) Открой материалы из блока выше\n2) Отметь прохождение: /done %d\n3) Пройди квиз модуля: /quiz %s\n4) Источники модуля: /sources %s",
-				m.NextLessonTitle,
-				m.Slug,
-				m.NextLessonID,
-				m.NextLessonContent,
-				resourceText,
-				m.NextLessonID,
-				m.Slug,
-				m.Slug,
-			)
-			s.sendText(chatID, text)
-			return
+	var nextMod *app.ModuleProgress
+	for i := range roadmap {
+		if roadmap[i].NextLessonID > 0 {
+			nextMod = &roadmap[i]
+			break
 		}
 	}
-	s.sendText(chatID, "Все уроки по roadmap завершены.\nСледующий шаг: /review и /mentor_report (для ментора).")
+	if nextMod == nil {
+		s.sendText(chatID, "Все уроки по roadmap завершены.\nСледующий шаг: /review и /mentor_report (для ментора).")
+		return
+	}
+	lessonID := nextMod.NextLessonID
+	chunks, err := s.store.GetLessonChunks(ctx, lessonID)
+	if err != nil {
+		s.logger.Warn("get lesson chunks failed", "err", err, "lesson_id", lessonID)
+	}
+	if onlyNextChunk && len(chunks) == 0 {
+		s.sendText(chatID, "У этого урока нет порций текста. Используй /lesson чтобы увидеть материалы.")
+		return
+	}
+	progress, err := s.store.GetUserLessonReadingProgress(ctx, user.ID, lessonID)
+	if err != nil {
+		s.logger.Warn("get reading progress failed", "err", err)
+		progress = 0
+	}
+	if len(chunks) > 0 && progress < len(chunks) {
+		chunk := chunks[progress]
+		if len(chunk) > maxChunkLen {
+			chunk = chunk[:maxChunkLen] + "..."
+		}
+		header := fmt.Sprintf("Урок: %s\nmodule=%s, часть %d из %d\n\n", nextMod.NextLessonTitle, nextMod.Slug, progress+1, len(chunks))
+		s.sendText(chatID, header+chunk)
+		nextIdx := progress + 1
+		_ = s.store.SetUserLessonReadingProgress(ctx, user.ID, lessonID, nextIdx)
+		if nextIdx < len(chunks) {
+			s.sendText(chatID, "Продолжить? /lesson_next")
+			return
+		}
+		s.sendText(chatID, fmt.Sprintf("Конец урока.\nОтметь прохождение: /done %d\nПотом квиз: /quiz %s", lessonID, nextMod.Slug))
+		return
+	}
+	// Нет фрагментов или всё уже прочитано — показываем карточку урока и ссылки на материалы
+	resources, _ := s.store.GetLessonResources(ctx, lessonID)
+	resourceText := "Материалы для этого урока пока не добавлены."
+	if len(resources) > 0 {
+		var rb strings.Builder
+		rb.WriteString("Ссылки на источники:\n")
+		for _, r := range resources {
+			url := r.URL
+			if strings.HasPrefix(url, "local://") {
+				url = "(локальный файл: " + strings.TrimPrefix(url, "local://") + ")"
+			}
+			fmt.Fprintf(&rb, "- %s: %s\n", r.Title, url)
+		}
+		resourceText = strings.TrimSpace(rb.String())
+	}
+	text := fmt.Sprintf(
+		"%s\nmodule=%s, lesson_id=%d\n\n%s\n\n%s\n\nЧто делать дальше:\n1) Отметь прохождение: /done %d\n2) Квиз модуля: /quiz %s\n3) Ещё ссылки: /sources %s",
+		nextMod.NextLessonTitle,
+		nextMod.Slug,
+		lessonID,
+		nextMod.NextLessonContent,
+		resourceText,
+		lessonID,
+		nextMod.Slug,
+		nextMod.Slug,
+	)
+	s.sendText(chatID, text)
 }
 
 func (s *Service) cmdDone(ctx context.Context, user app.User, chatID int64, args string) {
@@ -447,7 +492,7 @@ func (s *Service) quickStartText() string {
 		"",
 		"Быстрый старт (ничего отдельно активировать не нужно):",
 		"1) Посмотри учебный путь: /roadmap",
-		"2) Возьми следующий урок: /lesson",
+		"2) Возьми следующий урок: /lesson (порциями: /lesson_next)",
 		"3) После урока отметь прогресс: /done (lesson_id)",
 		"4) Проверь знания: /quiz (module_slug)",
 		"5) Посмотри материалы модуля: /sources (module_slug)",

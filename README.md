@@ -7,15 +7,13 @@ Telegram-бот для поэтапного обучения SRE-основам 
 - SRS-повторением сложных тем,
 - отчетами по прогрессу джунов.
 
-## Контентные источники
+## Контент: бот как основной источник
 
-Используются открытые и локальные источники:
-- Google SRE Books: <https://sre.google/books/>
-- The Site Reliability Workbook (англ., используется через русские конспекты внутри уроков)
-- `SRE_Коллективный_разум.pdf` (локальный источник)
-- `Site_Reliability_Engineering.pdf` (локальный источник)
+Уроки выдаются порционно через `/lesson` и `/lesson_next`. Текст хранится в БД (таблица `lesson_content_chunks`) — выжимки по всем темам, чтобы джунам не обязательно идти во внешние источники. Ссылки в `/sources` остаются дополнительными.
 
-Бот хранит структурированные конспекты и ссылки на источники, а не полные копии книг.
+Добавление текста из книг:
+- Вручную: правка миграций или `INSERT` в `lesson_content_chunks`.
+- Из PDF: скрипт `scripts/extract_pdf_chunks.py` вытаскивает текст из PDF и режет на чанки; можно вывести SQL под нужный `lesson_id`. См. `scripts/README.md`.
 
 ## Быстрый старт
 
@@ -41,8 +39,9 @@ docker compose up --build
 
 - `/start`
 - `/roadmap`
-- `/lesson`
-- `/done <lesson_id>`
+- `/lesson` — следующий урок (порциями)
+- `/lesson_next` — следующая порция текущего урока
+- `/done (lesson_id)`
 - `/quiz <module_slug>`
 - `/review`
 - `/progress`
@@ -68,5 +67,6 @@ docker compose up --build
 - `cmd/api` — HTTP API/отчеты/health/metrics
 - `cmd/worker` — SRS reminder worker
 - `internal/app` — доменная логика + store
-- `migrations` — схема и seed-контент
+- `migrations` — схема и seed-контент (в т.ч. выжимки по урокам)
+- `scripts/` — выгрузка текста из PDF в чанки (см. `scripts/README.md`)
 

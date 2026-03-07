@@ -132,6 +132,9 @@ func (s *Store) MarkLessonDone(ctx context.Context, userID, lessonID int64) erro
 	`, userID, lessonID); err != nil {
 		return fmt.Errorf("insert lesson completion: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM user_lesson_reading WHERE user_id = $1 AND lesson_id = $2`, userID, lessonID); err != nil {
+		return fmt.Errorf("clear reading progress: %w", err)
+	}
 
 	if err := s.recalcProgressTx(ctx, tx, userID, moduleID); err != nil {
 		return err
@@ -407,6 +410,52 @@ func (s *Store) GetLessonResources(ctx context.Context, lessonID int64) ([]Learn
 		out = append(out, item)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) GetLessonChunks(ctx context.Context, lessonID int64) ([]string, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT body_text FROM lesson_content_chunks
+		WHERE lesson_id = $1 ORDER BY chunk_index
+	`, lessonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetUserLessonReadingProgress(ctx context.Context, userID, lessonID int64) (chunkIndex int, err error) {
+	err = s.db.QueryRow(ctx, `
+		SELECT last_chunk_index FROM user_lesson_reading
+		WHERE user_id = $1 AND lesson_id = $2
+	`, userID, lessonID).Scan(&chunkIndex)
+	if err == pgx.ErrNoRows {
+		return 0, nil
+	}
+	return chunkIndex, err
+}
+
+func (s *Store) SetUserLessonReadingProgress(ctx context.Context, userID, lessonID int64, chunkIndex int) error {
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO user_lesson_reading(user_id, lesson_id, last_chunk_index, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (user_id, lesson_id) DO UPDATE
+		SET last_chunk_index = EXCLUDED.last_chunk_index, updated_at = now()
+	`, userID, lessonID, chunkIndex)
+	return err
+}
+
+func (s *Store) ClearUserLessonReading(ctx context.Context, userID, lessonID int64) error {
+	_, err := s.db.Exec(ctx, `DELETE FROM user_lesson_reading WHERE user_id = $1 AND lesson_id = $2`, userID, lessonID)
+	return err
 }
 
 func (s *Store) SubmitChecklist(ctx context.Context, userID, checklistID int64, notes string) (ChecklistSubmission, error) {
