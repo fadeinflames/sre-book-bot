@@ -26,6 +26,18 @@ type Service struct {
 	reviewFlow map[int64][]app.ReviewCard
 }
 
+// Тексты кнопок главного меню (ReplyKeyboard). При нажатии пользователь отправляет их как обычное сообщение.
+const (
+	btnRoadmap    = "📖 Roadmap"
+	btnLesson     = "📚 Урок"
+	btnLessonNext = "📄 Дальше"
+	btnQuiz       = "❓ Квиз"
+	btnReview     = "🔄 Повторение"
+	btnProgress   = "📊 Прогресс"
+	btnChecklists = "✅ Чеклисты"
+	btnHelp       = "❓ Помощь"
+)
+
 type quizState struct {
 	ModuleID   int64
 	ModuleSlug string
@@ -105,9 +117,9 @@ func (s *Service) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 
 	switch cmd {
 	case "start":
-		s.sendText(msg.Chat.ID, s.quickStartText())
+		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
 	case "help":
-		s.sendText(msg.Chat.ID, s.quickStartText())
+		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
 	case "roadmap":
 		s.cmdRoadmap(ctx, user, msg.Chat.ID)
 	case "lesson":
@@ -142,6 +154,33 @@ func (s *Service) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 func (s *Service) handleNonCommand(ctx context.Context, user app.User, msg *tgbotapi.Message) {
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {
+		return
+	}
+	// Навигация по кнопкам главного меню
+	switch text {
+	case btnRoadmap:
+		s.cmdRoadmap(ctx, user, msg.Chat.ID)
+		return
+	case btnLesson:
+		s.cmdLesson(ctx, user, msg.Chat.ID)
+		return
+	case btnLessonNext:
+		s.cmdLessonNext(ctx, user, msg.Chat.ID)
+		return
+	case btnQuiz:
+		s.cmdQuiz(ctx, user, msg.Chat.ID, "")
+		return
+	case btnReview:
+		s.cmdReview(ctx, user, msg.Chat.ID)
+		return
+	case btnProgress:
+		s.cmdProgress(ctx, user, msg.Chat.ID)
+		return
+	case btnChecklists:
+		s.cmdChecklists(ctx, msg.Chat.ID, "")
+		return
+	case btnHelp:
+		s.sendTextWithMainMenu(msg.Chat.ID, s.quickStartText())
 		return
 	}
 	if isOptionAnswer(text) {
@@ -300,7 +339,7 @@ func (s *Service) cmdQuiz(ctx context.Context, user app.User, chatID int64, args
 	s.quizStates[user.TelegramID] = state
 	s.quizMu.Unlock()
 
-	s.sendText(chatID, fmt.Sprintf("Старт квиза по %s (%d вопросов). Отвечай буквами A/B/C/D.", moduleSlug, len(qs)))
+	s.sendText(chatID, fmt.Sprintf("Старт квиза по %s (%d вопросов). Выбери ответ кнопкой ниже.", moduleSlug, len(qs)))
 	s.askQuizQuestion(chatID, state)
 }
 
@@ -309,8 +348,20 @@ func (s *Service) askQuizQuestion(chatID int64, state *quizState) {
 		return
 	}
 	q := state.Questions[state.Index]
-	text := fmt.Sprintf("Q%d: %s\nA) %s\nB) %s\nC) %s\nD) %s", state.Index+1, q.Question, q.OptionA, q.OptionB, q.OptionC, q.OptionD)
-	s.sendText(chatID, text)
+	text := fmt.Sprintf("Q%d: %s\n\nA) %s\nB) %s\nC) %s\nD) %s", state.Index+1, q.Question, q.OptionA, q.OptionB, q.OptionC, q.OptionD)
+	kb := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("A", "quiz:A"),
+			tgbotapi.NewInlineKeyboardButtonData("B", "quiz:B"),
+			tgbotapi.NewInlineKeyboardButtonData("C", "quiz:C"),
+			tgbotapi.NewInlineKeyboardButtonData("D", "quiz:D"),
+		),
+	)
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyMarkup = kb
+	if _, err := s.bot.Send(msg); err != nil {
+		s.logger.Error("send quiz question failed", "err", err, "chat_id", chatID)
+	}
 }
 
 func (s *Service) acceptQuizAnswerAndAskNext(ctx context.Context, user app.User, chatID int64, ans string) {
@@ -490,19 +541,45 @@ func (s *Service) quickStartText() string {
 	return strings.Join([]string{
 		"Привет! Я SRE Learning Bot.",
 		"",
-		"Быстрый старт (ничего отдельно активировать не нужно):",
-		"1) Посмотри учебный путь: /roadmap",
-		"2) Возьми следующий урок: /lesson (порциями: /lesson_next)",
-		"3) После урока отметь прогресс: /done (lesson_id)",
-		"4) Проверь знания: /quiz (module_slug)",
-		"5) Посмотри материалы модуля: /sources (module_slug)",
+		"Используй кнопки ниже или команды:",
+		"• Roadmap — учебный путь",
+		"• Урок / Дальше — следующий урок по частям",
+		"• Квиз — проверка знаний (нужен module_slug в чате)",
+		"• Повторение — карточки",
+		"• Прогресс — статистика",
+		"• Чеклисты — по module_slug",
 		"",
-		"Дополнительно:",
-		"- прогресс: /progress",
-		"- повторение: /review",
-		"- чеклисты: /checklists (module_slug)",
-		"- отправка чеклиста: /submit_checklist (id) (notes)",
+		"Команды: /done (lesson_id), /quiz (module_slug), /sources (module_slug), /submit_checklist (id) (notes)",
 	}, "\n")
+}
+
+func (s *Service) mainMenuKeyboard() tgbotapi.ReplyKeyboardMarkup {
+	kb := tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(btnRoadmap),
+			tgbotapi.NewKeyboardButton(btnLesson),
+			tgbotapi.NewKeyboardButton(btnLessonNext),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(btnQuiz),
+			tgbotapi.NewKeyboardButton(btnReview),
+			tgbotapi.NewKeyboardButton(btnProgress),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(btnChecklists),
+			tgbotapi.NewKeyboardButton(btnHelp),
+		),
+	)
+	kb.ResizeKeyboard = true
+	return kb
+}
+
+func (s *Service) sendTextWithMainMenu(chatID int64, text string) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyMarkup = s.mainMenuKeyboard()
+	if _, err := s.bot.Send(msg); err != nil {
+		s.logger.Error("send message with menu failed", "err", err, "chat_id", chatID)
+	}
 }
 
 func (s *Service) cmdSubmitChecklist(ctx context.Context, user app.User, chatID int64, args string) {
@@ -606,12 +683,48 @@ func (s *Service) cmdReviewSubmission(ctx context.Context, user app.User, chatID
 }
 
 func (s *Service) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) {
-	// MVP keeps interactions via commands/text. Callback reserved for future UI.
-	if cb == nil || cb.Message == nil {
+	if cb == nil || cb.Message == nil || cb.From == nil {
 		return
 	}
-	_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, "ok"))
-	_ = ctx
+	if len(s.cfg.AllowedTelegramIDs) > 0 {
+		if _, ok := s.cfg.AllowedTelegramIDs[cb.From.ID]; !ok {
+			_, _ = s.bot.Request(tgbotapi.NewCallbackWithAlert(cb.ID, "Доступ ограничен."))
+			return
+		}
+	}
+	user, err := s.store.EnsureUser(
+		ctx,
+		cb.From.ID,
+		cb.From.UserName,
+		app.RoleJunior,
+		s.cfg.AdminTelegramIDs,
+		s.cfg.MentorTelegramIDs,
+	)
+	if err != nil {
+		s.logger.Error("ensure user failed on callback", "err", err)
+		_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, ""))
+		return
+	}
+
+	data := cb.Data
+	if len(data) >= 6 && data[:5] == "quiz:" {
+		opt := strings.ToUpper(string(data[5]))
+		if opt != "A" && opt != "B" && opt != "C" && opt != "D" {
+			_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, ""))
+			return
+		}
+		s.quizMu.Lock()
+		state := s.quizStates[user.TelegramID]
+		s.quizMu.Unlock()
+		if state != nil {
+			_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, opt))
+			edit := tgbotapi.NewEditMessageReplyMarkup(cb.Message.Chat.ID, cb.Message.MessageID, tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
+			_, _ = s.bot.Request(edit)
+			s.acceptQuizAnswerAndAskNext(ctx, user, cb.Message.Chat.ID, opt)
+			return
+		}
+	}
+	_, _ = s.bot.Request(tgbotapi.NewCallback(cb.ID, ""))
 }
 
 func (s *Service) sendText(chatID int64, text string) {
