@@ -12,7 +12,7 @@ UPDATE quiz_questions SET option_a = 'Сразу писать отчёт' WHERE 
 
 UPDATE quiz_questions SET question = 'Какой результат даёт правильная автоматизация?', explanation = 'Автоматизация повышает надёжность и скорость реакции.' WHERE question = 'Какой результат правильной автоматизации?';
 
-UPDATE quiz_questions SET explanation = 'Постепенный rollout и явные критерии отката — базовый паттерн надёжности.' WHERE question = 'Что помогает снизить риск релиза?';
+UPDATE quiz_questions SET explanation = 'Постепенный rollout и явные критерии отката — базовый паттерн надёжности.' WHERE question IN ('Что помогает снизить риск релиза?', 'Что может снизить риск проблемного релиза?');
 UPDATE quiz_questions SET question = 'Зачем нужен capacity planning в SRE?', option_a = 'Только для отчётов' WHERE question = 'Зачем capacity planning в SRE?';
 
 UPDATE quiz_questions SET question = 'Какой набор повышает надёжность k8s-сервиса?', explanation = 'Комбинация health checks и ограничений ресурсов критична для стабильности.' WHERE question = 'Какой набор повышает надежность k8s сервиса?';
