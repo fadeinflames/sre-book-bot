@@ -42,9 +42,9 @@ SELECT l.id, r.title, r.url
 FROM lessons l
 JOIN (
   SELECT 'Что такое SRE и зачем'::text AS lesson_title, 'Google SRE Books'::text AS title, 'https://sre.google/books/'::text AS url
-  UNION ALL SELECT 'Что такое SRE и зачем', 'SRE: Коллективный разум (локальный PDF)', 'local://SRE_Коллективный_разум.pdf'
+  UNION ALL SELECT 'Что такое SRE и зачем', 'SRE: Коллективный разум (книга RU)', 'https://sre.google/books/'
   UNION ALL SELECT 'SRE, DevOps, Platform Engineering', 'The Site Reliability Workbook - How SRE relates to DevOps', 'https://sre.google/workbook/how-sre-relates/'
-  UNION ALL SELECT 'SRE, DevOps, Platform Engineering', 'The Site Reliability Workbook (local PDF, EN)', 'local://the-site-reliability-workbook-next18.pdf'
+  UNION ALL SELECT 'SRE, DevOps, Platform Engineering', 'The Site Reliability Workbook', 'https://sre.google/workbook/'
   UNION ALL SELECT 'Как формулировать SLI', 'Site Reliability Engineering Book - SLO Chapter', 'https://sre.google/sre-book/service-level-objectives/'
   UNION ALL SELECT 'SLO и Error Budget Policy', 'The Site Reliability Workbook - Implementing SLOs', 'https://sre.google/workbook/implementing-slos/'
   UNION ALL SELECT 'Четыре золотых сигнала', 'Site Reliability Engineering Book - Monitoring Distributed Systems', 'https://sre.google/sre-book/monitoring-distributed-systems/'
@@ -54,8 +54,8 @@ JOIN (
   UNION ALL SELECT 'Что считать Toil', 'Site Reliability Engineering Book - Eliminating Toil', 'https://sre.google/sre-book/eliminating-toil/'
   UNION ALL SELECT 'Автоматизация как стратегия надежности', 'Site Reliability Engineering Book - Automation', 'https://sre.google/sre-book/automation-at-google/'
   UNION ALL SELECT 'Надежные релизы', 'Site Reliability Engineering Book - Reliable Product Launches', 'https://sre.google/sre-book/reliable-product-launches/'
-  UNION ALL SELECT 'Надежность в Kubernetes', 'SRE: Коллективный разум - Kubernetes и надежность (локальный PDF)', 'local://SRE_Коллективный_разум.pdf'
-  UNION ALL SELECT 'Хаос и нагрузочное тестирование', 'SRE: Коллективный разум - Хаос-инжиниринг (локальный PDF)', 'local://SRE_Коллективный_разум.pdf'
+  UNION ALL SELECT 'Надежность в Kubernetes', 'Site Reliability Engineering Book - Managing critical state', 'https://sre.google/sre-book/'
+  UNION ALL SELECT 'Хаос и нагрузочное тестирование', 'The Site Reliability Workbook - Testing reliability', 'https://sre.google/workbook/'
 ) r ON r.lesson_title = l.title
 ON CONFLICT DO NOTHING;
 
@@ -63,26 +63,26 @@ INSERT INTO quiz_questions (module_id, question, option_a, option_b, option_c, o
 SELECT m.id, q.question, q.a, q.b, q.c, q.d, q.correct, q.explanation, q.source
 FROM modules m
 JOIN (VALUES
-  ('foundations', 'Что ключевое отличие SRE-подхода?', 'Фокус только на инфраструктуре', 'Надежность как инженерная и продуктовая функция', 'Полный отказ от релизов', 'Только ручные процессы', 'B', 'SRE связывает надежность с инженерными практиками и бизнес-целями.', 'https://sre.google/books/'),
+  ('foundations', 'Какое ключевое отличие SRE-подхода?', 'Фокус только на инфраструктуре', 'Надёжность как инженерная и продуктовая функция', 'Полный отказ от релизов', 'Только ручные процессы', 'B', 'SRE связывает надёжность с инженерными практиками и бизнес-целями.', 'https://sre.google/books/'),
   ('foundations', 'Какой практический принцип SRE помогает балансировать скорость и стабильность?', 'Code freeze forever', 'Error budget', 'Нулевые инциденты любой ценой', 'Отмена on-call', 'B', 'Error budget делает риск управляемым и позволяет принимать решения о релизах.', 'https://sre.google/sre-book/embracing-risk/'),
 
-  ('sli-slo-sla', 'Что из этого является SLI?', 'Обещание клиенту о штрафах', 'Время реакции поддержки', 'Измеряемая доля успешных запросов', 'Название SLA-документа', 'C', 'SLI — это измеримый индикатор качества сервиса.', 'https://sre.google/sre-book/service-level-objectives/'),
-  ('sli-slo-sla', 'Когда полезно вводить error budget policy?', 'Только после аварии', 'Когда есть определенный SLO и его регулярный расчет', 'Только при 99.999%', 'Никогда', 'B', 'Политика бюджета ошибок требует измеряемого SLO и режима принятия решений.', 'https://sre.google/workbook/implementing-slos/'),
+  ('sli-slo-sla', 'Какое из перечисленного является SLI?', 'Обещание клиенту о штрафах', 'Время реакции поддержки', 'Измеряемая доля успешных запросов', 'Название SLA-документа', 'C', 'SLI — это измеримый индикатор качества сервиса.', 'https://sre.google/sre-book/service-level-objectives/'),
+  ('sli-slo-sla', 'Когда полезно вводить error budget policy?', 'Только после аварии', 'Когда есть определённый SLO и его регулярный расчёт', 'Только при 99.999%', 'Никогда', 'B', 'Политика бюджета ошибок требует измеряемого SLO и режима принятия решений.', 'https://sre.google/workbook/implementing-slos/'),
 
-  ('monitoring-alerting', 'Что входит в "четыре золотых сигнала"?', 'CPU, RAM, Disk, Network', 'Latency, Traffic, Errors, Saturation', 'Only Logs and Traces', 'SLA, KPI, OKR, NPS', 'B', 'Классический набор сигналов для продакшн-мониторинга.', 'https://sre.google/sre-book/monitoring-distributed-systems/'),
+  ('monitoring-alerting', 'Что входит в четыре золотых сигнала мониторинга?', 'CPU, RAM, Disk, Network', 'Latency, Traffic, Errors, Saturation', 'Only Logs and Traces', 'SLA, KPI, OKR, NPS', 'B', 'Классический набор сигналов для продакшн-мониторинга.', 'https://sre.google/sre-book/monitoring-distributed-systems/'),
   ('monitoring-alerting', 'Почему burn-rate алерты лучше статического порога?', 'Они всегда тише', 'Они учитывают скорость расходования error budget', 'Они не требуют SLO', 'Они только для low traffic', 'B', 'Burn-rate привязывает алерт к реальному риску нарушения SLO.', 'https://sre.google/workbook/alerting-on-slos/'),
 
-  ('incident-response', 'Что обязательно в blameless postmortem?', 'Поиск виновного', 'Секретность отчета', 'Root causes + action items с владельцами', 'Удаление логов', 'C', 'Цель постмортема — системные улучшения и исполнимые действия.', 'https://sre.google/workbook/postmortem-culture/'),
-  ('incident-response', 'Что важнее в первые минуты инцидента?', 'Сразу писать отчет', 'Назначить роли и стабилизировать сервис', 'Отключить мониторинг', 'Провести ретроспективу', 'B', 'Сначала управление инцидентом и снижение ущерба.', 'https://sre.google/workbook/incident-response/'),
+  ('incident-response', 'Что обязательно в blameless postmortem?', 'Поиск виновного', 'Секретность отчёта', 'Root causes и action items с владельцами', 'Удаление логов', 'C', 'Цель постмортема — системные улучшения и исполнимые действия.', 'https://sre.google/workbook/postmortem-culture/'),
+  ('incident-response', 'Что важнее в первые минуты инцидента?', 'Сразу писать отчёт', 'Назначить роли и стабилизировать сервис', 'Отключить мониторинг', 'Провести ретроспективу', 'B', 'Сначала управление инцидентом и снижение ущерба.', 'https://sre.google/workbook/incident-response/'),
 
   ('toil-automation', 'Какой признак у toil-работы?', 'Автоматизирована и масштабируема', 'Повторяемая ручная рутина без долговременной ценности', 'Ключевая инженерная разработка', 'Стратегическая архитектурная задача', 'B', 'Toil нужно снижать и автоматизировать.', 'https://sre.google/sre-book/eliminating-toil/'),
-  ('toil-automation', 'Какой результат правильной автоматизации?', 'Рост ручных операций', 'Снижение когнитивной нагрузки on-call и времени восстановления', 'Отмена SLO', 'Запрет релизов', 'B', 'Автоматизация повышает надежность и скорость реакции.', 'https://sre.google/sre-book/automation-at-google/'),
+  ('toil-automation', 'Какой результат даёт правильная автоматизация?', 'Рост ручных операций', 'Снижение когнитивной нагрузки on-call и времени восстановления', 'Отмена SLO', 'Запрет релизов', 'B', 'Автоматизация повышает надёжность и скорость реакции.', 'https://sre.google/sre-book/automation-at-google/'),
 
-  ('capacity-release', 'Что помогает снизить риск релиза?', 'Big bang deploy без метрик', 'Canary и rollback criteria', 'Отключение алертов', 'Релизы ночью без дежурных', 'B', 'Постепенный rollout и явные критерии отката — базовый паттерн надежности.', 'https://sre.google/sre-book/reliable-product-launches/'),
-  ('capacity-release', 'Зачем capacity planning в SRE?', 'Только для отчетов', 'Чтобы заранее обнаруживать дефицит ресурсов и риски деградации', 'Чтобы уменьшить observability', 'Это не SRE-задача', 'B', 'Планирование нагрузки предотвращает аварийные дефициты.', 'https://sre.google/sre-book/capacity-planning/'),
+  ('capacity-release', 'Что помогает снизить риск релиза?', 'Big bang deploy без метрик', 'Canary и rollback criteria', 'Отключение алертов', 'Релизы ночью без дежурных', 'B', 'Постепенный rollout и явные критерии отката — базовый паттерн надёжности.', 'https://sre.google/sre-book/reliable-product-launches/'),
+  ('capacity-release', 'Зачем нужен capacity planning в SRE?', 'Только для отчётов', 'Чтобы заранее обнаруживать дефицит ресурсов и риски деградации', 'Чтобы уменьшить observability', 'Это не SRE-задача', 'B', 'Планирование нагрузки предотвращает аварийные дефициты.', 'https://sre.google/sre-book/capacity-planning/'),
 
-  ('kubernetes-reliability', 'Какой набор повышает надежность k8s сервиса?', 'Отключить probes', 'Readiness/liveness + requests/limits + PDB', 'Только autoscaling', 'Только service mesh', 'B', 'Комбинация health checks и ограничений ресурсов критична для стабильности.', 'local://SRE_Коллективный_разум.pdf'),
-  ('kubernetes-reliability', 'Почему полезен chaos engineering?', 'Чтобы сломать прод без цели', 'Для проверки гипотез об отказоустойчивости до реальных аварий', 'Только для бенчмарков CPU', 'Он заменяет мониторинг', 'B', 'Контролируемые эксперименты выявляют слабые места заранее.', 'local://SRE_Коллективный_разум.pdf')
+  ('kubernetes-reliability', 'Какой набор повышает надёжность k8s-сервиса?', 'Отключить probes', 'Readiness/liveness + requests/limits + PDB', 'Только autoscaling', 'Только service mesh', 'B', 'Комбинация health checks и ограничений ресурсов критична для стабильности.', 'https://sre.google/books/'),
+  ('kubernetes-reliability', 'Почему полезен chaos engineering?', 'Чтобы сломать прод без цели', 'Для проверки гипотез об отказоустойчивости до реальных аварий', 'Только для бенчмарков CPU', 'Он заменяет мониторинг', 'B', 'Контролируемые эксперименты выявляют слабые места заранее.', 'https://sre.google/workbook/')
 ) AS q(slug, question, a, b, c, d, correct, explanation, source) ON q.slug = m.slug
 ON CONFLICT DO NOTHING;
 
